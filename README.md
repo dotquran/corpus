@@ -1,18 +1,36 @@
 # dotquran/corpus
 
-Processes the [Tanzil](https://tanzil.net) Quran Uthmani text and produces structured output files in **JSON**, **YAML**, and **XML** formats — ready to consume in any application.
+Processes multiple [Tanzil](https://tanzil.net) Quran text variants and produces structured output files in **JSON**, **YAML**, and **XML** formats.
 
 ---
 
-## Processed files (ready to use)
+## Processed versions (ready to use)
 
-The `processed/` folder is committed to this repository. You can use the files directly via GitHub's raw URLs without cloning or running anything:
+The `processed/` folder is committed to this repository.
 
-| Format | URL |
-|--------|-----|
-| JSON   | `https://raw.githubusercontent.com/dotquran/corpus/main/processed/quran-uthmani.json` |
-| YAML   | `https://raw.githubusercontent.com/dotquran/corpus/main/processed/quran-uthmani.yaml` |
-| XML    | `https://raw.githubusercontent.com/dotquran/corpus/main/processed/quran-uthmani.xml` |
+Each source variant in `src/resources/` is exported to its own folder:
+
+- `processed/simple/`
+- `processed/simple-clean/`
+- `processed/simple-imlaai/`
+- `processed/simple-minimal/`
+- `processed/simple-plain/`
+- `processed/uthmani/`
+- `processed/uthmani-all/`
+
+Inside each folder, you will find:
+
+- `quran-<variant>.json`
+- `quran-<variant>.yaml`
+- `quran-<variant>.xml`
+
+### Version notes
+
+- **uthmani / uthmani-all:** Uthmani-script variants for general Quran text usage.
+- **simple / simple-clean / simple-minimal / simple-plain:** simplified-script variants for different normalization needs.
+- **simple-imlaai:** special variant used only for ASR matching.
+
+> Warning: `simple-imlaai` is provided for ASR matching workflows only and should not be used for any other purpose.
 
 ---
 
@@ -84,10 +102,10 @@ npm install
 npm run generate
 ```
 
-Output files are written to `processed/`.
+Output files are written to `processed/<variant>/`.
 
 ---
 
 ## Source
 
-The Quran text is sourced from the [Tanzil Project](https://tanzil.net) (`source/quran-uthmani_all.txt`) and is used under the **Creative Commons Attribution 3.0** license. The text may not be modified. Any redistribution must credit Tanzil Project and link back to [tanzil.net](https://tanzil.net).
+The Quran text is sourced from the [Tanzil Project](https://tanzil.net) (`src/resources/*.txt`) and is used under the **Creative Commons Attribution 3.0** license. The text may not be modified. Any redistribution must credit Tanzil Project and link back to [tanzil.net](https://tanzil.net).

@@ -36,6 +36,11 @@ interface Corpus {
   surahs: Surah[];
 }
 
+interface RawAyah {
+  ayahNum: number;
+  rawText: string;
+}
+
 // ---------------------------------------------------------------------------
 // Surah metadata (name + revelation type)
 // Index is surah number (1-based, index 0 unused)
@@ -191,9 +196,9 @@ function extractMarks(rawText: string): { text: string; marks: string[] } {
 // Parse source file into raw map: surahNumber → [{ayahNum, rawText}]
 // ---------------------------------------------------------------------------
 
-function parseSource(filePath: string): Map<number, Array<{ ayahNum: number; rawText: string }>> {
+function parseSource(filePath: string): Map<number, RawAyah[]> {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const map = new Map<number, Array<{ ayahNum: number; rawText: string }>>();
+  const map = new Map<number, RawAyah[]>();
 
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -207,6 +212,8 @@ function parseSource(filePath: string): Map<number, Array<{ ayahNum: number; raw
     const ayahNum  = parseInt(trimmed.slice(pipeIdx1 + 1, pipeIdx2), 10);
     const rawText  = trimmed.slice(pipeIdx2 + 1).trim();
 
+    if (Number.isNaN(surahNum) || Number.isNaN(ayahNum) || !rawText) continue;
+
     if (!map.has(surahNum)) map.set(surahNum, []);
     map.get(surahNum)!.push({ ayahNum, rawText });
   }
@@ -219,7 +226,7 @@ function parseSource(filePath: string): Map<number, Array<{ ayahNum: number; raw
 // ---------------------------------------------------------------------------
 
 function buildCorpus(
-  rawMap: Map<number, Array<{ ayahNum: number; rawText: string }>>,
+  rawMap: Map<number, RawAyah[]>,
   basmalah: string,
 ): Surah[] {
   const surahs: Surah[] = [];
@@ -309,71 +316,106 @@ function buildXml(corpus: Corpus): string {
 // ---------------------------------------------------------------------------
 
 function main(): void {
-  const sourceFile = path.resolve(__dirname, 'quran-uthmani_all.txt');
-  const destDir    = path.resolve(__dirname, '..', 'processed');
+  const resourcesDir = path.resolve(process.cwd(), 'src', 'resources');
+  const processedRoot = path.resolve(process.cwd(), 'processed');
 
-  if (!fs.existsSync(sourceFile)) {
-    console.error(`Source file not found: ${sourceFile}`);
+  if (!fs.existsSync(resourcesDir)) {
+    console.error(`Resources folder not found: ${resourcesDir}`);
     process.exit(1);
   }
 
-  fs.mkdirSync(destDir, { recursive: true });
+  const resourceFiles = fs
+    .readdirSync(resourcesDir)
+    .filter((fileName) => fileName.endsWith('.txt'))
+    .sort();
 
-  console.log('Parsing source file…');
-  const rawMap = parseSource(sourceFile);
-
-  // Extract basmalah from surah 1 ayah 1 (it is the entire text of that ayah)
-  const fatihahAyahs = rawMap.get(1);
-  if (!fatihahAyahs?.length) {
-    console.error('Could not find Al-Fatihah in source file');
+  if (!resourceFiles.length) {
+    console.error(`No .txt files found in resources folder: ${resourcesDir}`);
     process.exit(1);
   }
-  const basmalah = fatihahAyahs[0].rawText; // "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ"
 
-  console.log('Building corpus…');
-  const surahs = buildCorpus(rawMap, basmalah);
+  fs.mkdirSync(processedRoot, { recursive: true });
 
-  const metadata: Metadata = {
-    source: 'Tanzil Project',
-    version: 'Uthmani, Version 1.1',
-    repository: 'dotquran/corpus',
-    website: 'https://tanzil.net',
-    license: 'Creative Commons Attribution 3.0',
-    termsOfUse:
-      'Permission is granted to copy and distribute verbatim copies of this text, ' +
-      'but CHANGING IT IS NOT ALLOWED. ' +
-      'This Quran text can be used in any website or application, provided that its ' +
-      'source (Tanzil Project) is clearly indicated, and a link is made to tanzil.net ' +
-      'to enable users to keep track of changes. ' +
-      'This copyright notice shall be included in all verbatim copies of the text, ' +
-      'and shall be reproduced appropriately in all files derived from or containing ' +
-      'a substantial portion of this text.',
-    processedBy: 'github.com/dotquran/corpus',
-    processedAt: new Date().toUTCString(),
-  };
+  let hasFailures = false;
 
-  const corpus: Corpus = { metadata, surahs };
+  for (const fileName of resourceFiles) {
+    const dataset = path.parse(fileName).name;
+    const sourceFile = path.join(resourcesDir, fileName);
+    const destDir = path.join(processedRoot, dataset);
 
-  // JSON
-  const jsonPath = path.join(destDir, 'quran-uthmani.json');
-  fs.writeFileSync(jsonPath, JSON.stringify(corpus, null, 2), 'utf-8');
-  console.log(`Written: ${jsonPath}`);
+    console.log(`\nProcessing dataset: ${dataset}`);
+    console.log(`Source: ${sourceFile}`);
 
-  // YAML
-  const yamlPath = path.join(destDir, 'quran-uthmani.yaml');
-  fs.writeFileSync(
-    yamlPath,
-    yaml.dump(corpus, { lineWidth: -1 }),
-    'utf-8',
-  );
-  console.log(`Written: ${yamlPath}`);
+    try {
+      const rawMap = parseSource(sourceFile);
 
-  // XML
-  const xmlPath = path.join(destDir, 'quran-uthmani.xml');
-  fs.writeFileSync(xmlPath, buildXml(corpus), 'utf-8');
-  console.log(`Written: ${xmlPath}`);
+      // Use Al-Fatihah ayah 1 text as basmalah source for this dataset.
+      const fatihahAyahs = rawMap.get(1) ?? [];
+      const fatihahAyah1 = fatihahAyahs.find((ayah) => ayah.ayahNum === 1);
 
-  console.log('Done.');
+      if (!fatihahAyah1) {
+        throw new Error('Could not find Al-Fatihah ayah 1 in source file');
+      }
+
+      console.log('Building corpus…');
+      const surahs = buildCorpus(rawMap, fatihahAyah1.rawText);
+
+      const metadata: Metadata = {
+        source: 'Tanzil Project',
+        version: 'Uthmani, Version 1.1',
+        repository: 'dotquran/corpus',
+        website: 'https://tanzil.net',
+        license: 'Creative Commons Attribution 3.0',
+        termsOfUse:
+          'Permission is granted to copy and distribute verbatim copies of this text, ' +
+          'but CHANGING IT IS NOT ALLOWED. ' +
+          'This Quran text can be used in any website or application, provided that its ' +
+          'source (Tanzil Project) is clearly indicated, and a link is made to tanzil.net ' +
+          'to enable users to keep track of changes. ' +
+          'This copyright notice shall be included in all verbatim copies of the text, ' +
+          'and shall be reproduced appropriately in all files derived from or containing ' +
+          'a substantial portion of this text.',
+        processedBy: 'github.com/dotquran/corpus',
+        processedAt: new Date().toUTCString(),
+      };
+
+      const corpus: Corpus = { metadata, surahs };
+
+      fs.mkdirSync(destDir, { recursive: true });
+
+      const baseName = `quran-${dataset}`;
+
+      // JSON
+      const jsonPath = path.join(destDir, `${baseName}.json`);
+      fs.writeFileSync(jsonPath, JSON.stringify(corpus, null, 2), 'utf-8');
+      console.log(`Written: ${jsonPath}`);
+
+      // YAML
+      const yamlPath = path.join(destDir, `${baseName}.yaml`);
+      fs.writeFileSync(
+        yamlPath,
+        yaml.dump(corpus, { lineWidth: -1 }),
+        'utf-8',
+      );
+      console.log(`Written: ${yamlPath}`);
+
+      // XML
+      const xmlPath = path.join(destDir, `${baseName}.xml`);
+      fs.writeFileSync(xmlPath, buildXml(corpus), 'utf-8');
+      console.log(`Written: ${xmlPath}`);
+    } catch (error) {
+      hasFailures = true;
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed dataset ${dataset}: ${message}`);
+    }
+  }
+
+  if (hasFailures) {
+    console.error('\nDone with errors.');
+    process.exit(1);
+  }
+
+  console.log('\nDone.');
 }
 
 main();
